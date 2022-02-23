@@ -1,5 +1,6 @@
 Q1. What is your home directory?
 /home/ubuntu
+
 Q2. What is the output of this command?
 hello_world.txt
 
