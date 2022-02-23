@@ -103,4 +103,4 @@ A: There was not enough free space to store the output of fastq-dump.
 
 Q26: What was your solution?
 
-My solution was to use the --gzip modifier, which compresses the output.
+A: My solution was to use the --gzip modifier, which compresses the output.
