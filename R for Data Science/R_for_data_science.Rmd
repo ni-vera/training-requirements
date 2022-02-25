@@ -1,0 +1,194 @@
+---
+title: "Gapminder"
+author: "Nicolás Vera"
+date: "21/2/2022"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Working directory is set and necessary libraries are loaded. 
+
+```{r,warning=FALSE}
+setwd("~/BRN/")
+
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+```
+
+
+# Guided part 
+
+###  Read in the gapminder_clean.csv data as a tibble using read_csv.
+
+```{r,warning=FALSE}
+gapminder <- read_csv("gapminder_clean.csv")
+```
+###  Filter the data to include only rows where Year is 1962 and then make a scatter plot comparing 'CO2 emissions (metric tons per capita)' and gdpPercap for the filtered data.
+
+###  On the filtered data, calculate the pearson correlation of 'CO2 emissions (metric tons per capita)' and gdpPercap. What is the Pearson R value and associated p value?
+
+```{r,warning=FALSE}
+gapminder %>% 
+  filter(Year == 1962) %>%
+  ggplot(aes(x = gdpPercap ,y = `CO2 emissions (metric tons per capita)`)) + geom_point() + stat_cor(method = "pearson")
+```
+We can see that, as expected, there was a very high, positive correlation between CO2 emissions and GDP per capita in 1962.
+
+### On the unfiltered data, answer "In what year is the correlation between 'CO2 emissions (metric tons per capita)' and gdpPercap the strongest?" Filter the dataset to that year for the next step...
+```{r}
+gapminder %>%
+  group_by(Year) %>%
+  summarize(Correlation = cor(gdpPercap,`CO2 emissions (metric tons per capita)`,use = "complete.obs")) %>%
+  slice_max(abs(Correlation))
+```
+
+The year with the strongest correlation between GDP per capita is 1967 (the second measured year, the first being 1962). We can see a consistent decrease after that date in the next graph, which may be partly due to increasing outsourcing of the secondary sector from first world countries to emerging countries. Another reason may be that economies with low GDP per capita have more margin for emission increase through industrialization, while services play a more central role in already developed economies.
+
+```{r}
+gapminder %>%
+  group_by(Year) %>%
+  summarize(Correlation = cor(gdpPercap,`CO2 emissions (metric tons per capita)`,use = "complete.obs")) %>%
+  ggplot(aes(x = Year,y = Correlation)) + geom_point()
+```
+
+### Using plotly, create an interactive scatter plot comparing 'CO2 emissions (metric tons per capita)' and gdpPercap, where the point size is determined by pop (population) and the color is determined by the continent. You can easily convert any ggplot plot to a plotly plot using the ggplotly() command.
+
+```{r,warning=FALSE}
+library(plotly)
+p <- gapminder %>% 
+  filter(Year == 1962) %>%
+  ggplot(aes(x = gdpPercap ,y = `CO2 emissions (metric tons per capita)`)) + geom_point(aes(size = pop,colour = continent)) + stat_cor(method = "pearson") 
+ggplotly(p)
+```
+We can see that African, American and Asian countries are at the bottom in both emissions and GDP per capita. European countries, with some exception, are more rich and carbonic anhydride emitting.The two American outliers must be Canada and the United States of America.
+
+```{r}
+data_frame <- as.data.frame(gapminder)
+```
+
+
+# Unguided part
+
+### What is the relationship between continent and 'Energy use (kg of oil equivalent per capita)'? (stats test needed)
+
+Before applying a statistical test we will visualize the distribution of energy use in each continent through the use of boxplots. We have used only the values for 2007 for the amount of outliers to be readily interpretable. You can hover your mose over a point in the interactive graph to see which country it is representing. 
+
+```{r}
+p <- gapminder %>%
+  filter(!is.na(continent) & Year == 2007) %>%
+  ggplot(aes(x = continent,y = `Energy use (kg of oil equivalent per capita)`)) + geom_boxplot() + geom_point(aes(color = `Country Name`)) + theme(legend.position = "none")
+  
+ggplotly(p)
+  
+```
+
+Europe and Oceania are the most energy consuming countries, followed by Asia and the Americas. Asian outliers are rich countries, due to oil or otherwise. The three clear American outliers are the two rich North American countries and the industry intensive Trinidad & Tobago. Africa presents the lower values, with South Africa and resource rich Lybia and Equatorial Guinea as outliers.
+
+If the data are normally distributed and homocedastic, an ANOVA test would be appropriate. Let's check those assumptions.
+
+```{r}
+gapminder %>%
+  filter(!is.na(continent) & !is.na(`Energy use (kg of oil equivalent per capita)`)) %>%
+  group_by(continent) %>%
+  summarize(Shapiro =shapiro.test(`Energy use (kg of oil equivalent per capita)`)[2]$p.value)
+```
+
+Only Oceania seems to be normally distributed. The null hypothesis (normality) is rejected. We shall thus use the Kruskal-Wallis test. 
+
+```{r}
+gapminder %>%
+  filter(!is.na(continent) & !is.na(`Energy use (kg of oil equivalent per capita)`)) %>%
+  summarise(kruskal = kruskal.test(`Energy use (kg of oil equivalent per capita)`~continent)$p.value)
+```
+The null hypothesis (equality of means) is clearly rejected. 
+
+This test only refutes the hypothesis that all means are equal but doesn't tell us if the difference between two specific continents is significative. In order to see that we will use a pairwise Wilcoxon Test.
+
+```{r,warning=FALSE}
+library(rstatix)
+gapminder %>%
+  filter(!is.na(continent) & !is.na(`Energy use (kg of oil equivalent per capita)`)) %>%
+  pairwise_wilcox_test(`Energy use (kg of oil equivalent per capita)`~ continent) %>%
+  select(group1,group2,p.adj.signif)
+```
+
+As we can see, all pairwise comparisons are significant except the difference between Asia and the Americas. 
+
+### Is there a significant difference between Europe and Asia with respect to 'Imports of goods and services (% of GDP)' in the years after 1990? (stats test needed)
+
+As in the previous section, we will visualize before applying a statistical test:
+
+```{r,warning=FALSE}
+library(reshape2)
+ p <- gapminder %>%
+  filter(!is.na(`Imports of goods and services (% of GDP)`)& Year > 1990) %>%
+  filter(continent == "Europe" | continent == "Asia") %>%
+  group_by(Year) %>%
+  summarise(mean_asia = mean(`Imports of goods and services (% of GDP)`[continent == "Asia"]),mean_europe = mean(`Imports of goods and services (% of GDP)`[continent == "Europe"])) %>%
+  gather(key,value,mean_asia,mean_europe) %>%
+  ggplot(aes(x = Year,y = value,colour = key)) + geom_point() + geom_line() + labs(y = "Imports of goods and services (% of GDP)")
+ 
+ggplotly(p)
+  
+```
+In the graph we can see that mean European country imports as % of GDP have been growing faster than mean Asian country imports as % of GDP, almost converging in 2007. 
+
+Since n > 30 we don't need to check for normality, but we still have to check whether there is homogeneity of variances. We will use a Levene test for that. 
+```{r,warning=FALSE}
+library(car)
+gapminder %>%
+  filter(!is.na(`Imports of goods and services (% of GDP)`)& Year > 1990) %>%
+  filter(continent == "Europe" | continent == "Asia") %>%
+  summarise( leveneTest(y = `Imports of goods and services (% of GDP)`,group = continent))
+```
+The null hypothesis (homogeneity of variance) is rejected. We shall then apply a t test for different variances. 
+
+```{r}
+library(car)
+gapminder %>%
+  filter(!is.na(`Imports of goods and services (% of GDP)`) & Year > 1990) %>%
+  filter(continent == "Europe" | continent == "Asia") %>%
+  summarise(t.test(formula = `Imports of goods and services (% of GDP)` ~ continent,var.equal = F)$p.value)
+```
+We can't reject the null hypothesis of equality of means: there isn't a significant difference in post-1990 imports of goods and services (% of GDP) between Asia and Europe.
+
+### What is the country (or countries) that has the highest 'Population density (people per sq. km of land area)' across all years? (i.e., which country has the highest average ranking in this category across each time point in the dataset?)
+
+```{r}
+gapminder %>%
+  drop_na(`Population density (people per sq. km of land area)`) %>%
+  group_by(Year) %>%
+  mutate(ranking = min_rank(desc(`Population density (people per sq. km of land area)`))) %>%
+  ungroup() %>%
+  group_by(`Country Name`) %>%
+  summarize(mean_ranking = mean(ranking)) %>%
+  arrange(mean_ranking)
+  
+```
+
+The Macao Special Administrative Region within China and the city state of Monaco top the ranking of population density rankings, followed by other small countries. The only considerably-sized country in the list is Bangladesh. 
+
+### What country (or countries) has shown the greatest increase in 'Life expectancy at birth, total (years)' since 1962?
+
+```{r}
+gapminder %>%
+  filter(`Country Name` %in% as.matrix(gapminder[!is.na(gapminder$`Life expectancy at birth, total (years)`) & gapminder$Year == 1962,"Country Name"])) %>% 
+  filter(Year == 1962 | Year == 2007) %>%
+  group_by(`Country Name`) %>%
+  arrange(Year) %>%
+  mutate(Difference = `Life expectancy at birth, total (years)`[Year == 2007] - `Life expectancy at birth, total (years)`[Year == 1962]) %>%
+  select(Difference) %>%
+  slice_max(Difference)
+```
+Afghanistan has shown the greatest increase.
+
+
