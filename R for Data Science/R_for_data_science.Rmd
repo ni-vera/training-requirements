@@ -58,6 +58,7 @@ gapminder %>%
   filter(Year == 1962) %>%
   ggplot(aes(x = gdpPercap ,y = `CO2 emissions (metric tons per capita)`)) + geom_point() + xlab("GDP per capita") + ylab(bquote("CO"[2]*" emissions (MTPC)")) + scale_x_log10() + ggtitle(bquote("CO"[2]*" emissions per capita vs GDP per capita")) + theme(plot.title = element_text(hjust = 0.5))
 ```
+
 We can see that, as expected, there was a very high, positive correlation between CO2 emissions and GDP per capita in 1962.
 
 ###  3:
@@ -148,7 +149,7 @@ The null hypothesis (equality of means) \``r ifelse(p_value < 0.05,"is rejected"
 
 This test only refutes the hypothesis that all means are equal but doesn't tell us if the difference between two specific continents is significative. In order to ascertain that we used a Dunn test, which showed that all differences were significant except for the differences between Asia and the Americas and Europe and Oceania. The results are shown in the following table.
 
-```{r,warning=FALSE}
+```{r,warning=FALSE,results=T}
 gapminder %>%
   filter(!is.na(continent), !is.na(`Energy use (kg of oil equivalent per capita)`)) %>%
   dunn_test(`Energy use (kg of oil equivalent per capita)`~ continent) %>%
