@@ -10,63 +10,95 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE,results = "hide",warning = F,message = F)
 ```
 
-
-Working directory is set and necessary libraries are loaded. 
-
 ```{r,warning=FALSE}
-setwd("~/BRN/")
-
+library(knitr)
 library(tidyverse)
 library(ggplot2)
 library(ggpubr)
+library(plotly)
+library(rstatix)
+library(reshape2)
+library(car)
+```
+
+```{r wrap-hook}
+hook_output = knit_hooks$get('output')
+knit_hooks$set(output = function(x, options) {
+  # this hook is used only when the linewidth option is not NULL
+  if (!is.null(n <- options$linewidth)) {
+    x = knitr:::split_lines(x)
+    # any lines wider than n should be wrapped
+    if (any(nchar(x) > 120)) x = strwrap(x, width = 120)
+    x = paste(x, collapse = '\n')
+  }
+  hook_output(x, options)
+})
 ```
 
 
 # Guided part 
 
-###  Read in the gapminder_clean.csv data as a tibble using read_csv.
+### 1:
+
+Read in the gapminder_clean.csv data as a tibble using read_csv.
 
 ```{r,warning=FALSE}
 gapminder <- read_csv("gapminder_clean.csv")
 ```
-###  Filter the data to include only rows where Year is 1962 and then make a scatter plot comparing 'CO2 emissions (metric tons per capita)' and gdpPercap for the filtered data.
+### 2:
 
-###  On the filtered data, calculate the pearson correlation of 'CO2 emissions (metric tons per capita)' and gdpPercap. What is the Pearson R value and associated p value?
+ Filter the data to include only rows where Year is 1962 and then make a scatter plot comparing 'CO2 emissions (metric tons per capita)' and gdpPercap for the filtered data.
+
 
 ```{r,warning=FALSE}
 gapminder %>% 
   filter(Year == 1962) %>%
-  ggplot(aes(x = gdpPercap ,y = `CO2 emissions (metric tons per capita)`)) + geom_point() + stat_cor(method = "pearson")
+  ggplot(aes(x = gdpPercap ,y = `CO2 emissions (metric tons per capita)`)) + geom_point() + xlab("GDP per capita") + ylab(bquote("CO"[2]*" emissions (MTPC)")) + scale_x_log10() + ggtitle(bquote("CO"[2]*" emissions per capita vs GDP per capita")) + theme(plot.title = element_text(hjust = 0.5))
 ```
 We can see that, as expected, there was a very high, positive correlation between CO2 emissions and GDP per capita in 1962.
 
-### On the unfiltered data, answer "In what year is the correlation between 'CO2 emissions (metric tons per capita)' and gdpPercap the strongest?" Filter the dataset to that year for the next step...
+###  3:
+
+On the filtered data, calculate the pearson correlation of 'CO2 emissions (metric tons per capita)' and gdpPercap. What is the Pearson R value and associated p value?
+
 ```{r}
-gapminder %>%
+value <- gapminder %>%
+  summarise(cor = cor(`CO2 emissions (metric tons per capita)`,gdpPercap,method = "spearman", use = "complete.obs"))
+```
+The spearman correlation coefficient is \``r value`\`.
+
+### 4:
+
+On the unfiltered data, answer "In what year is the correlation between 'CO2 emissions (metric tons per capita)' and gdpPercap the strongest?" Filter the dataset to that year for the next step...
+```{r}
+value <- gapminder %>%
   group_by(Year) %>%
-  summarize(Correlation = cor(gdpPercap,`CO2 emissions (metric tons per capita)`,use = "complete.obs")) %>%
+  summarize(Correlation = cor(gdpPercap,`CO2 emissions (metric tons per capita)`,use = "complete.obs",method = "spearman")) %>%
   slice_max(abs(Correlation))
 ```
 
-The year with the strongest correlation between GDP per capita is 1967 (the second measured year, the first being 1962). We can see a consistent decrease after that date in the next graph, which may be partly due to increasing outsourcing of the secondary sector from first world countries to emerging countries. Another reason may be that economies with low GDP per capita have more margin for emission increase through industrialization, while services play a more central role in already developed economies.
+The year with the strongest correlation between GDP per capita and CO2 emissions per capita is \``r value[,1]`\`, with a Spearman correlation coefficient of \``r round(value[,2],2)`\`. We can observe the trend in the following figure:
 
 ```{r}
 gapminder %>%
   group_by(Year) %>%
-  summarize(Correlation = cor(gdpPercap,`CO2 emissions (metric tons per capita)`,use = "complete.obs")) %>%
-  ggplot(aes(x = Year,y = Correlation)) + geom_point()
+  summarize(Correlation = cor(gdpPercap,`CO2 emissions (metric tons per capita)`,use = "complete.obs",method = "spearman")) %>%
+  ggplot(aes(x = factor(Year),y = Correlation)) + geom_bar(stat = "identity",fill = "#40e2ff") + ggtitle(bquote("Correlation between CO"[2]*" emissions and GDP 1962-2007 (per capita)")) + xlab("Year")
+
+
 ```
 
-### Using plotly, create an interactive scatter plot comparing 'CO2 emissions (metric tons per capita)' and gdpPercap, where the point size is determined by pop (population) and the color is determined by the continent. You can easily convert any ggplot plot to a plotly plot using the ggplotly() command.
+### 5: 
 
-```{r,warning=FALSE}
-library(plotly)
+Using plotly, create an interactive scatter plot comparing 'CO2 emissions (metric tons per capita)' and gdpPercap, where the point size is determined by pop (population) and the color is determined by the continent. You can easily convert any ggplot plot to a plotly plot using the ggplotly() command.
+
+```{r,warning=FALSE,results = TRUE}
 p <- gapminder %>% 
   filter(Year == 1962) %>%
-  ggplot(aes(x = gdpPercap ,y = `CO2 emissions (metric tons per capita)`)) + geom_point(aes(size = pop,colour = continent)) + stat_cor(method = "pearson") 
+  ggplot(aes(x = gdpPercap ,y = `CO2 emissions (metric tons per capita)`)) + geom_point(aes(size = pop,colour = continent)) + ggtitle("CO<sub>2</sub> emissions per capita vs GDP per capita") +  theme(plot.title = element_text(hjust = 0.5)) + scale_x_log10() + xlab("GDP per capita") + ylab("CO<sub>2</sub> emissions (mtpc)")
 ggplotly(p)
 ```
 We can see that African, American and Asian countries are at the bottom in both emissions and GDP per capita. European countries, with some exception, are more rich and carbonic anhydride emitting.The two American outliers must be Canada and the United States of America.
@@ -78,14 +110,16 @@ data_frame <- as.data.frame(gapminder)
 
 # Unguided part
 
-### What is the relationship between continent and 'Energy use (kg of oil equivalent per capita)'? (stats test needed)
+### 1:
+
+What is the relationship between continent and 'Energy use (kg of oil equivalent per capita)'? (stats test needed)
 
 Before applying a statistical test we will visualize the distribution of energy use in each continent through the use of boxplots. We have used only the values for 2007 for the amount of outliers to be readily interpretable. You can hover your mose over a point in the interactive graph to see which country it is representing. 
 
-```{r}
+```{r,results=TRUE}
 p <- gapminder %>%
-  filter(!is.na(continent) & Year == 2007) %>%
-  ggplot(aes(x = continent,y = `Energy use (kg of oil equivalent per capita)`)) + geom_boxplot() + geom_point(aes(color = `Country Name`)) + theme(legend.position = "none")
+  filter(!is.na(continent), Year == 2007) %>%
+  ggplot(aes(x = continent,y = `Energy use (kg of oil equivalent per capita)`)) + geom_boxplot() + geom_point(aes(color = `Country Name`)) + theme(legend.position = "none") + ggtitle("Energy use per continent") + xlab("Continent") + ylab("Energy use (kgoe)") + theme(plot.title = element_text(hjust= 0.5))
   
 ggplotly(p)
   
@@ -93,11 +127,11 @@ ggplotly(p)
 
 Europe and Oceania are the most energy consuming countries, followed by Asia and the Americas. Asian outliers are rich countries, due to oil or otherwise. The three clear American outliers are the two rich North American countries and the industry intensive Trinidad & Tobago. Africa presents the lower values, with South Africa and resource rich Lybia and Equatorial Guinea as outliers.
 
-If the data are normally distributed and homocedastic, an ANOVA test would be appropriate. Let's check those assumptions.
+If the data are normally distributed and homoscedastic, an ANOVA test would be appropriate. Let's check those assumptions.
 
 ```{r}
 gapminder %>%
-  filter(!is.na(continent) & !is.na(`Energy use (kg of oil equivalent per capita)`)) %>%
+  filter(!is.na(continent),!is.na(`Energy use (kg of oil equivalent per capita)`)) %>%
   group_by(continent) %>%
   summarize(Shapiro =shapiro.test(`Energy use (kg of oil equivalent per capita)`)[2]$p.value)
 ```
@@ -105,90 +139,103 @@ gapminder %>%
 Only Oceania seems to be normally distributed. The null hypothesis (normality) is rejected. We shall thus use the Kruskal-Wallis test. 
 
 ```{r}
-gapminder %>%
-  filter(!is.na(continent) & !is.na(`Energy use (kg of oil equivalent per capita)`)) %>%
+p_value <- gapminder %>%
+  filter(!is.na(continent), !is.na(`Energy use (kg of oil equivalent per capita)`)) %>%
   summarise(kruskal = kruskal.test(`Energy use (kg of oil equivalent per capita)`~continent)$p.value)
 ```
-The null hypothesis (equality of means) is clearly rejected. 
+The null hypothesis (equality of means) \``r ifelse(p_value < 0.05,"is rejected","can't be rejected")`\`. 
 
-This test only refutes the hypothesis that all means are equal but doesn't tell us if the difference between two specific continents is significative. In order to see that we will use a pairwise Wilcoxon Test.
+
+This test only refutes the hypothesis that all means are equal but doesn't tell us if the difference between two specific continents is significative. In order to ascertain that we used a Dunn test, which showed that all differences were significant except for the differences between Asia and the Americas and Europe and Oceania. The results are shown in the following table.
 
 ```{r,warning=FALSE}
-library(rstatix)
 gapminder %>%
-  filter(!is.na(continent) & !is.na(`Energy use (kg of oil equivalent per capita)`)) %>%
-  pairwise_wilcox_test(`Energy use (kg of oil equivalent per capita)`~ continent) %>%
-  select(group1,group2,p.adj.signif)
+  filter(!is.na(continent), !is.na(`Energy use (kg of oil equivalent per capita)`)) %>%
+  dunn_test(`Energy use (kg of oil equivalent per capita)`~ continent) %>%
+  mutate(Significative = ifelse(p.adj.signif == "ns","No","Yes")) %>%
+  rename(`Continent 1` = group1 ,`Continent 2` = group2) %>%
+  select(`Continent 1`,`Continent 2`,Significative)
+  
 ```
 
-As we can see, all pairwise comparisons are significant except the difference between Asia and the Americas. 
 
-### Is there a significant difference between Europe and Asia with respect to 'Imports of goods and services (% of GDP)' in the years after 1990? (stats test needed)
+### 2:
+
+Is there a significant difference between Europe and Asia with respect to 'Imports of goods and services (% of GDP)' in the years after 1990? (stats test needed)
 
 As in the previous section, we will visualize before applying a statistical test:
 
-```{r,warning=FALSE}
-library(reshape2)
+```{r,warning=FALSE,results=TRUE}
  p <- gapminder %>%
-  filter(!is.na(`Imports of goods and services (% of GDP)`)& Year > 1990) %>%
+  filter(!is.na(`Imports of goods and services (% of GDP)`), Year > 1990) %>%
   filter(continent == "Europe" | continent == "Asia") %>%
   group_by(Year) %>%
-  summarise(mean_asia = mean(`Imports of goods and services (% of GDP)`[continent == "Asia"]),mean_europe = mean(`Imports of goods and services (% of GDP)`[continent == "Europe"])) %>%
-  gather(key,value,mean_asia,mean_europe) %>%
-  ggplot(aes(x = Year,y = value,colour = key)) + geom_point() + geom_line() + labs(y = "Imports of goods and services (% of GDP)")
+  summarise(mean_asia = mean(`Imports of goods and services (% of GDP)`[continent == "Asia"]),mean_europe = mean(`Imports of goods and services (% of GDP)`[continent == "Europe"]),sd_asia = sd(`Imports of goods and services (% of GDP)`[continent == "Asia"]),sd_europe = sd(`Imports of goods and services (% of GDP)`[continent == "Europe"])) %>%
+   rename(Asia = mean_asia,
+          Europe = mean_europe) %>%
+  pivot_longer(c(Asia,Europe),names_to = "Continent",values_to = "Mean") %>%
+   mutate(sd = ifelse(Continent == "Asia",sd_asia,sd_europe)) %>%
+   select(-c(sd_asia,sd_europe)) %>%
+  ggplot(aes(x = as.factor(Year),y = Mean,fill = Continent)) + geom_bar(stat = "identity",position = "dodge") + labs(y = "Imports of G&S (% of GDP)") + ggtitle("Evolution of imports of G&S (% of GDP)") + theme(plot.title = element_text(hjust= 0.5))  + geom_errorbar(aes(ymin = Mean - sd,ymax = Mean + sd),width = 0.4,position = position_dodge(0.85))
  
 ggplotly(p)
   
 ```
 In the graph we can see that mean European country imports as % of GDP have been growing faster than mean Asian country imports as % of GDP, almost converging in 2007. 
 
-Since n > 30 we don't need to check for normality, but we still have to check whether there is homogeneity of variances. We will use a Levene test for that. 
-```{r,warning=FALSE}
-library(car)
-gapminder %>%
-  filter(!is.na(`Imports of goods and services (% of GDP)`)& Year > 1990) %>%
-  filter(continent == "Europe" | continent == "Asia") %>%
-  summarise( leveneTest(y = `Imports of goods and services (% of GDP)`,group = continent))
-```
-The null hypothesis (homogeneity of variance) is rejected. We shall then apply a t test for different variances. 
-
-```{r}
-library(car)
-gapminder %>%
-  filter(!is.na(`Imports of goods and services (% of GDP)`) & Year > 1990) %>%
-  filter(continent == "Europe" | continent == "Asia") %>%
-  summarise(t.test(formula = `Imports of goods and services (% of GDP)` ~ continent,var.equal = F)$p.value)
-```
-We can't reject the null hypothesis of equality of means: there isn't a significant difference in post-1990 imports of goods and services (% of GDP) between Asia and Europe.
-
-### What is the country (or countries) that has the highest 'Population density (people per sq. km of land area)' across all years? (i.e., which country has the highest average ranking in this category across each time point in the dataset?)
+We will plot an histogram in order to see whether there is obvious non-normality.
 
 ```{r}
 gapminder %>%
+  filter(!is.na(`Imports of goods and services (% of GDP)`), Year > 1990) %>%
+  filter(continent == "Europe") %>%
+  ggplot(aes(x = `Imports of goods and services (% of GDP)`)) + geom_histogram()
+```
+
+Data for Europe is clearly not normally distributed, so we will use the Wilcoxon non-parametric test. 
+
+```{r}
+value <- gapminder %>%
+  filter(!is.na(`Imports of goods and services (% of GDP)`), Year > 1990) %>%
+  filter(continent == "Europe" | continent == "Asia") %>%
+  summarise(wilcox.test(formula = `Imports of goods and services (% of GDP)` ~ continent)$p.value)
+```
+The null hypothesis (equality of mean imports as a % of GDP between Europe & Asia) is \``r ifelse(value < 0.05,"rejected","accepted")`\`.
+
+### 3:
+
+What is the country (or countries) that has the highest 'Population density (people per sq. km of land area)' across all years? (i.e., which country has the highest average ranking in this category across each time point in the dataset?)
+
+```{r}
+tabla <- gapminder %>%
   drop_na(`Population density (people per sq. km of land area)`) %>%
   group_by(Year) %>%
   mutate(ranking = min_rank(desc(`Population density (people per sq. km of land area)`))) %>%
   ungroup() %>%
   group_by(`Country Name`) %>%
   summarize(mean_ranking = mean(ranking)) %>%
-  arrange(mean_ranking)
-  
+  arrange(mean_ranking) %>%
+  slice_min(mean_ranking) %>%
+  select(`Country Name`)
 ```
 
-The Macao Special Administrative Region within China and the city state of Monaco top the ranking of population density rankings, followed by other small countries. The only considerably-sized country in the list is Bangladesh. 
+\``r tabla[1,]`\` was the country with a highest average population density ranking.
 
-### What country (or countries) has shown the greatest increase in 'Life expectancy at birth, total (years)' since 1962?
+### 4:
+
+What country (or countries) has shown the greatest increase in 'Life expectancy at birth, total (years)' since 1962?
 
 ```{r}
-gapminder %>%
-  filter(`Country Name` %in% as.matrix(gapminder[!is.na(gapminder$`Life expectancy at birth, total (years)`) & gapminder$Year == 1962,"Country Name"])) %>% 
+tabla <- gapminder %>%
   filter(Year == 1962 | Year == 2007) %>%
   group_by(`Country Name`) %>%
+  filter(!any(is.na(`Life expectancy at birth, total (years)`)), n() > 1) %>%
   arrange(Year) %>%
   mutate(Difference = `Life expectancy at birth, total (years)`[Year == 2007] - `Life expectancy at birth, total (years)`[Year == 1962]) %>%
   select(Difference) %>%
-  slice_max(Difference)
+  ungroup() %>%
+  arrange(Difference) %>%
+  slice_tail()
 ```
-Afghanistan has shown the greatest increase.
 
-
+The country featuring the greatest increase of life expectancy at birth in the 1962-2007 period was \``r tabla[1,1]`\`, with an increase of \``r round(tabla[1,2],2)`\` years. 
