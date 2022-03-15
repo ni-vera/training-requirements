@@ -54,7 +54,9 @@ gapminder <- read_csv("gapminder_clean.csv")
 ```{r,warning=FALSE}
 gapminder %>% 
   filter(Year == 1962) %>%
-  ggplot(aes(x = gdpPercap ,y = `CO2 emissions (metric tons per capita)`)) + geom_point() + xlab("GDP per capita (log10)") + ylab(bquote("CO"[2]*" emissions in mtpc (log10)")) + scale_x_log10() + scale_y_log10() + ggtitle(bquote("CO"[2]*" emissions per capita vs GDP per capita")) + theme(plot.title = element_text(hjust = 0.5))
+  ggplot(aes(x = gdpPercap ,y = `CO2 emissions (metric tons per capita)`)) + geom_point() + xlab("GDP per capita (log10)") +
+  ylab(bquote("CO"[2]*" emissions in mtpc (log10)")) + 
+  scale_x_log10() + scale_y_log10() + ggtitle(bquote("CO"[2]*" emissions per capita vs GDP per capita")) + theme(plot.title = element_text(hjust = 0.5))
 ```
 
 We can see that, as expected, there was a <b>considerable positive correlation between CO2 emissions and GDP per capita</b> in 1962.
@@ -85,7 +87,8 @@ value <- gapminder %>%
   slice_max(abs(Correlation))
 ```
 
-The <b>year with the strongest correlation between GDP per capita and CO2 emissions per capita is `r value[,1]`</b>, with a Spearman correlation coefficient of `r round(value[,2],2)`. We can observe the trend in the following figure:
+The <b>year with the strongest correlation between GDP per capita and CO2 emissions per capita is `r value[,1]`</b>, with a Spearman correlation coefficient of
+`r round(value[,2],2)`. We can observe the trend in the following figure:
 
 ```{r}
 gapminder %>%
@@ -173,7 +176,9 @@ gapminder %>%
   filter(continent == "Europe" | continent == "Asia") %>%
   group_by(Year) %>%
   rename(Continent = continent) %>%
-  ggplot(aes(x = as.factor(Year),y = `Imports of goods and services (% of GDP)`,fill = Continent)) + geom_violin() + labs(x = "Year",y = "Imports of G&S (% of GDP)") + ggtitle("Evolution of imports of G&S (% of GDP)") + theme(plot.title = element_text(hjust= 0.5))
+  ggplot(aes(x = as.factor(Year),y = `Imports of goods and services (% of GDP)`,fill = Continent)) + 
+  geom_violin() + labs(x = "Year",y = "Imports of G&S (% of GDP)") +
+  ggtitle("Evolution of imports of G&S (% of GDP)") + theme(plot.title = element_text(hjust= 0.5))
 ```
 
 
@@ -185,7 +190,9 @@ We will plot an histogram in order to see whether there is obvious non-normality
 gapminder %>%
   filter(!is.na(`Imports of goods and services (% of GDP)`), Year > 1990) %>%
   filter(continent == "Europe") %>%
-  ggplot(aes(x = `Imports of goods and services (% of GDP)`)) + geom_histogram() + ggtitle("Distribution of imports of G&S (% of GDP) in Europe") + theme(plot.title = element_text(hjust = 0.5))
+  ggplot(aes(x = `Imports of goods and services (% of GDP)`)) + geom_histogram() +
+  ggtitle("Distribution of imports of G&S (% of GDP) in Europe") +
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
 Data for Europe is clearly not normally distributed, so we will use the Wilcoxon non-parametric test. 
