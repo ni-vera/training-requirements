@@ -7,3 +7,7 @@ rotated scatterplot. The relative position of the points remains the same as in 
 
 There may be other things that can be deduced from the plot (such as lack of linearity) but I think non-homogeneity of variance is one of them: the leftmost part,
 which comprises most observations, is cone-shaped.
+
+>Some lines of code are too long and this hurts readability. I will clarify more what the problem is I am trying to indicate.
+
+Excessively long lines were split (this was only appplied to code lines, since markdown content is expected to be read after knitting)
