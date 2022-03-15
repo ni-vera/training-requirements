@@ -61,7 +61,7 @@ We can see that, as expected, there was a <b>considerable positive correlation b
 
 ###  3: On the filtered data, calculate the pearson correlation of 'CO2 emissions (metric tons per capita)' and gdpPercap. What is the Pearson R value and associated p value?
 
-The pearson correlation method needs data to be homoscedastic. Let's plot a residuals vs fitted graph to see whether that condition is met.
+The Pearson correlation method needs data to be homoscedastic. Let's visually inspect whether this condition is met (a regression line and residual values were used to determine the zoom and rotation applied to the raw graph).
 
 ```{r}
 gapminder %>%
@@ -69,7 +69,7 @@ gapminder %>%
   ggplot(aes(x=Fitted,y=Residuals)) + geom_point() + ggtitle("Residuals vs Fitted") + theme(plot.title = element_text(hjust = 0.5))
 ```
 
-Variance is clearly greater as values grow, so the data is clearly not homoscedastic. We will thus use Spearman's correlation coefficient, which doesn't assume homoscedasticity. 
+Variance is clearly greater as values grow (the leftmost part, which comprises most observations, is cone-shaped), so the data is clearly not homoscedastic. We will thus use Spearman's correlation coefficient, which doesn't assume homoscedasticity. 
 
 ```{r}
 value <- gapminder %>%
@@ -233,5 +233,7 @@ tabla <- gapminder %>%
 The country featuring the <b>greatest increase of life expectancy at birth in the 1962-2007 period was `r tabla[1,1]`</b>, with an increase of `r round(tabla[1,2],2)` years. 
 
 
-
-
+```{r}
+gapminder %>%
+  ggplot(aes(y = `CO2 emissions (metric tons per capita)`,x =gdpPercap)) + geom_point()
+```
