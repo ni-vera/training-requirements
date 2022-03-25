@@ -33,12 +33,8 @@ checkv <- function(matriz) {
   # Checking whether any of the horizontal or vertical vectors has all its
   # elements equal
   matriz_rev <- matriz[ncol(matriz):1, ]
-  if (any(apply(matriz, 1, allequal)) || any(apply(matriz, 2, allequal)) ||
-    allequal(diag(matriz)) || allequal(diag(matriz_rev))) {
-    return(T)
-  }else{
-    return(F)
-  }
+  return(any(apply(matriz, 1, allequal)) || any(apply(matriz, 2, allequal)) ||
+    allequal(diag(matriz)) || allequal(diag(matriz_rev)))
 }
 
 user_turn <- function(matriz, symbol) {
@@ -131,15 +127,14 @@ computer_turn <- function(matriz, compsymbol) {
   # Both the horizontal and vertical axis are checked and the suitable
   # positions added to the ranker df
   ranker <- rbind(ranker,do.call(rbind,lapply(1:3,function(i) rankadd(matriz[i, ], 
-                                                    axis = "hor", ranker, i))))
+                                                    axis = "hor", i))))
   ranker <- rbind(ranker,do.call(rbind,lapply(1:3,function(i) rankadd(matriz[,i ], 
-                                                    axis = "ver", ranker, i))))
+                                                    axis = "ver", i))))
   # The diag is checked and idem
-  ranker <- rbind(ranker,rankadd(diag(matriz), axis = "diag", ranker = ranker,i =0))
+  ranker <- rbind(ranker,rankadd(diag(matriz), axis = "diag", i =0))
   # The rev matrix is created to check the rev diag and idem
   matriz_rev <- matriz[nrow(matriz):1, ]
-  ranker <- rbind(ranker,rankadd(diag(matriz_rev), axis = "diag_rev",
-                                 ranker = ranker, i =0))
+  ranker <- rbind(ranker,rankadd(diag(matriz_rev), axis = "diag_rev", i =0))
   #now we have the complete df with all the opportunities
   if (length(ranker > 0)) {
     colnames(ranker) <- c("Pos", "Pr", "Sy")
