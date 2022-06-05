@@ -1,0 +1,460 @@
+---
+title: "RNA-Seq Analysis Training"
+author: "Nicolás Vera"
+link-citations: true
+bibliography: references.bib
+date: "05/6/2022"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,results = "hide",warning = F,message = F)
+```
+
+```{r,warning=FALSE}
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(EnhancedVolcano)
+library(pheatmap)
+library(dplyr) 
+library(msigdbr) 
+library(enrichplot)
+library(clusterProfiler)
+library(GOplot)
+library(simplifyEnrichment)
+library(ggfortify)
+library(plotly)
+library(org.Hs.eg.db)
+library(ggvenn)
+library(gplots)
+```
+
+# Introduction 
+
+Tracing its first steps to the second half of the 19th century, immunotherapy has emerged as one of the most promising types of cancer treatment. One of the obstacles that prevents the immune system from attacking cancer cells is overexpression of PD-L1 in these cells. The biological function of the PD-1/PD-L1 axis is negative regulation of immune activation. PD-L1 binds to the PD-1 receptor in the surface of T cells, inducing either T cell exhaustion or apoptosis, thus enabling immune escape by PD-L1 over-expressing cancer cells. PD-1 checkpoint blockade works by blocking the PD-1/PD-L1 axis through the use of monoclonal antibodies such as nivolumab and pembrolizumab [@waldman-2020]. Despite checkpoint blockade therapy's having proved itself effective, chief among the challenges it faces is the high number of non-responsive patients [@nowicki-2018].
+
+For the present project we have a dataset consisting of mRNA-seq data from 28 tumour samples from melanoma patients obtained prior to their treatment with PD-1 blocker pembrolizumab. The samples (n = 28) are divided into complete responders (CR, n = 5), partial responders (PR, n = 10) and non-responders (PD, n = 13). Two of the samples belong to the same patient. 
+
+That the samples are pre-treatment is especially useful for finding factors that are predictive of a good response, as well as giving insights about the mechanisms involved in impeding the expected response to the treatment. In this project we will try to find factors that prevent response. Complementarily, we will also try to ascertain whether complete responses and partial responses are just due to the same factors being present in different degrees or whether they represent qualitatively distinct phenomena.
+
+In the first place, we will use DESEq2 to find diferentially expressed genes between the different groups. Then, we will use the results of DESEq2 to find significantly enriched pathways and gene sets between the groups.
+
+Since we have three groups, there will be three pairwise comparisons: 
+
+-Complete Response vs Progressive Disease
+
+-Partial Response vs Progressive Disease.
+
+-Complete Response vs Partial Response.
+
+# Results
+
+## PCA
+After importing the data, we will plot the two first principal components after applying a variance stabilizing transformation (vst) in order to see whether treatment response explains a considerable amount of the variability between samples and in order to identify potential outliers.
+
+```{r}
+#The data and metadata is imported
+
+raw_counts <- read.table("GSE78220-expression.txt",header = T)
+
+metadata <- read_xlsx("GSE78220_series_matrix.xlsx",sheet = 2)
+
+#We check whether the ordering of the samples is the same in the count
+#matrix and in the metadata file
+all(metadata$ID_REF == colnames(raw_counts))
+
+colnames(metadata)[11] <- "resp"
+colnames(metadata)[13] <- "sex"
+metadata <- metadata %>%
+  #filter(str_detect(resp,"Complete") | str_detect(resp,"Progressive")) %>%
+  mutate(Response = recode(resp, 
+                    "anti-pd-1 response: Complete Response" = "CR",
+                    "anti-pd-1 response: Progressive Disease" = "PD",
+                    "anti-pd-1 response: Partial Response" = "PR"),
+         Sex = as.factor(recode(sex,
+                      "gender: M" = "M",
+                      "gender: F" = "F"
+                    )),
+         Age = as.numeric(gsub("age \\(yrs\\)\\: ","",`!Sample_characteristics_ch1...14`)),
+         Status = as.factor(gsub("disease status\\: ","",`!Sample_characteristics_ch1...15`)),
+         Mapki = as.factor(gsub("previous mapki: ","",`!Sample_characteristics_ch1...18`)),
+         res = as.factor(gsub("anti-pd-1 response: ","",resp))
+         )
+
+raw_counts <- raw_counts[,metadata$ID_REF]
+
+#We use patient number instead of GEO accession number for readability
+colnames(raw_counts) <- metadata$`!Sample_title`
+
+metadata <- metadata %>%
+  dplyr::rename(Name = `!Sample_title`)
+```
+
+```{r,warning=FALSE}
+library(DESeq2)
+
+dds <- DESeqDataSetFromMatrix(countData = raw_counts,colData = metadata,design = ~Response)
+
+dds <- DESeq(dds)
+```
+
+```{r}
+transformed_dds <- vst(dds,blind = T)
+
+pcaData <- plotPCA(transformed_dds, intgroup=c("Response","Mapki","Name"), returnData=TRUE)
+
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+ggplot(pcaData, aes(PC1, PC2, color=Response, shape=Mapki)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed() + geom_text_repel(aes(label = Name))
+```
+
+There is no obvious clustering of the different groups. As Pt2 & Pt28 seem to be represent too much of PC2 variance, we will consider them outliers and remove them for downstream analysis.
+
+```{r}
+#Pt2 and Pt28 are removed
+raw_counts <- raw_counts[,-c(2,22)]
+
+metadata <- metadata[-c(2,22),]
+```
+
+After removing them, we calculate and plot again the first two principal components.
+```{r,warning=FALSE}
+library(DESeq2)
+
+dds <- DESeqDataSetFromMatrix(countData = raw_counts,
+                              colData = metadata,design = ~Response)
+
+dds <- DESeq(dds)
+```
+
+```{r}
+transformed_dds <- vst(dds,blind = T)
+
+pcaData <- plotPCA(transformed_dds, intgroup=c("Response","Mapki","Name"), returnData=TRUE)
+
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+ggplot(pcaData, aes(PC1, PC2, color=Response, shape=Mapki)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed() + geom_text_repel(aes(label = Name))
+```
+
+With the two patients removed, the three groups still don't cluster but there are outliers no longer.
+
+Now we will visualize, through volcano plots, the amount of genes that are significantly differentially expressed (p adjusted < 0.01) and whose log2foldchange is > 1 (i.e., a change twofold or more) for each of the three pairwise comparisons.
+
+```{r,warning=FALSE}
+resCR_PD <- results(dds,contrast = c("Response","CR","PD"))
+resPR_PD <- results(dds,contrast = c("Response","PR","PD"))
+resCR_PR <- results(dds,contrast = c("Response","CR","PR"))
+
+#Enhanced volcano
+p1 <- EnhancedVolcano(resCR_PD,lab = rownames(resCR_PD),
+      x="log2FoldChange",y = "padj",pCutoff = 0.01) + ggtitle("CR_PD")
+p2 <- EnhancedVolcano(resPR_PD,lab = rownames(resPR_PD),
+      x="log2FoldChange",y = "padj",pCutoff = 0.01) + ggtitle("PR_PD")
+p3 <- EnhancedVolcano(resCR_PR,lab = rownames(resCR_PR),
+      x="log2FoldChange",y = "padj",pCutoff = 0.01) + ggtitle("CR_PR")
+
+p1
+
+p2
+
+p3
+
+```
+
+It catches our attention that the FGA gene is enriched both in PD and in CR with respect to PR. We will next plot a Venn diagram showing the overlap between the genes differentially expressed in each of the three comparisons.
+
+```{r}
+sig_CR_PD <- as.data.frame(resCR_PD) %>%
+  filter(abs(-log2FoldChange) > 1,padj <= 0.01,baseMean >20) %>%
+  rownames_to_column("Gene") %>%
+  pull(Gene)
+
+sig_PR_PD <- as.data.frame(resPR_PD) %>%
+  filter(abs(-log2FoldChange) > 1,padj <= 0.01,baseMean > 20) %>%
+  rownames_to_column("Gene") %>%
+  pull(Gene)
+
+sig_CR_PR <- as.data.frame(resCR_PR) %>%
+  filter(abs(-log2FoldChange) > 1,padj <= 0.01,baseMean > 20) %>%
+  rownames_to_column("Gene") %>%
+  pull(Gene)
+
+
+venn(list(sig_CR_PD,sig_PR_PD,sig_CR_PR),names = c("CR_PD","PR_PD","CR_PR"))
+```
+
+There doesn't seem to be much overlap between A (CR vs PD) and B (PR vs PD), suggesting that the factors predicting complete and partial response are somewhat different. The degree of overlap between B (PR vs PD) and C (CR vs PR) may not be due to common factors but to genes down-regulated in one of the comparisons and up-regulated in the other,as was the case with FGA in the volcano plot. Let's check that possibility by plotting a Venn diagram exclusively of up-regulated genes and then a down-regulated-exclusive one:
+
+```{r}
+sig_CR_PD <- as.data.frame(resCR_PD) %>%
+  filter(log2FoldChange > 1,padj <= 0.01,baseMean >20) %>%
+  rownames_to_column("Gene") %>%
+  pull(Gene)
+
+sig_PR_PD <- as.data.frame(resPR_PD) %>%
+  filter(log2FoldChange > 1,padj <= 0.01,baseMean > 20) %>%
+  rownames_to_column("Gene") %>%
+  pull(Gene)
+
+sig_CR_PR <- as.data.frame(resCR_PR) %>%
+  filter(log2FoldChange > 1,padj <= 0.01,baseMean > 20) %>%
+  rownames_to_column("Gene") %>%
+  pull(Gene)
+
+
+venn(list(sig_CR_PD,sig_PR_PD,sig_CR_PR),names = c("CR_PD","PR_PD","CR_PR"))
+title(main = "Upregulated only")
+```
+
+```{r}
+sig_CR_PD <- as.data.frame(resCR_PD) %>%
+  filter(log2FoldChange > 1,padj <= 0.01,baseMean >20) %>%
+  rownames_to_column("Gene") %>%
+  pull(Gene)
+
+sig_PR_PD <- as.data.frame(resPR_PD) %>%
+  filter(log2FoldChange > 1,padj <= 0.01,baseMean > 20) %>%
+  rownames_to_column("Gene") %>%
+  pull(Gene)
+
+sig_CR_PR <- as.data.frame(resCR_PR) %>%
+  filter(log2FoldChange > 1,padj <= 0.01,baseMean > 20) %>%
+  rownames_to_column("Gene") %>%
+  pull(Gene)
+
+
+venn(list(sig_CR_PD,sig_PR_PD,sig_CR_PR),names = c("CR_PD","PR_PD","CR_PR"))
+title(main = "Downregulated only")
+```
+
+As both the diagram that includes only the up-regulated genes and that that includes only the down-regulated show 0 overlap between B and C, all the overlap seen in the first Venn diagram must be due to genes being down-regulated in one of the two comparisons being up-regulated in the other comparison. This is noteworthy, as the two comparisons (PR vs PD and CR vs PR) are in the same direction (a higher degree of response is compared to a lower one), i.e. some genes are up-regulated both in the complete response and in the progressive disease group relative to the partial response group.
+
+## Heatmaps
+
+Now we will explore how much the 20 top differentially expressed genes in each comparison are expressed in each of the patients by means of a heatmap.
+
+```{r}
+index <- which(resCR_PD$padj <= 0.01 &
+             abs(resCR_PD$log2FoldChange) >= 1 &
+             resCR_PD$baseMean >= 20)
+
+sigRes <- resCR_PD[index,]
+```
+
+```{r}
+sig_results <- as.data.frame(sigRes)
+top20de <- head(sig_results[order(abs(sig_results$log2FoldChange)),],n = 20)
+
+
+rds <- rlog(dds)
+matriz <- assay(rds)
+index <- rownames(top20de)
+DE_genes <- matriz[index,]
+```
+
+```{r}
+col_anno <- as.data.frame(colData(dds)[,"Response",drop = F])
+pheatmap(DE_genes,scale = "row",show_rownames = T,
+         clustering_distance_rows = "correlation",
+         annotation_col = col_anno )
+```
+
+As we can see, all CR patients cluster together but PD and PR ones don't, which fits what we inferred from the Venn diagram: CR features a lot of exclusive genes which don't differentiate PR from PD. 
+
+```{r}
+index <- which(resPR_PD$padj <= 0.01 &
+             abs(resPR_PD$log2FoldChange) >= 1 &
+             resPR_PD$baseMean >= 20)
+
+sigRes <- resPR_PD[index,]
+```
+
+```{r}
+sig_results <- as.data.frame(sigRes)
+top20de <- head(sig_results[order(abs(sig_results$log2FoldChange)),],n = 20)
+
+
+rds <- rlog(dds)
+matriz <- assay(rds)
+index <- rownames(top20de)
+DE_genes <- matriz[index,]
+```
+
+```{r}
+col_anno <- as.data.frame(colData(dds)[,"Response",drop = F])
+pheatmap(DE_genes,scale = "row",show_rownames = T,
+         clustering_distance_rows = "correlation",
+         annotation_col = col_anno )
+```
+
+Here, all three groups cluster relatively well, with some exceptions. CR groups with PD in these genes, which is expected as PR seemed to be mostly governed by its own genes in the Venn diagram. CR patients clustering together to some degree would again point towards them featuring a quite distinctive profile.
+
+```{r}
+index <- which(resCR_PR$padj <= 0.01 &
+             abs(resCR_PR$log2FoldChange) >= 1 &
+             resCR_PR$baseMean >= 20)
+
+sigRes <- resCR_PR[index,]
+```
+
+```{r}
+sig_results <- as.data.frame(sigRes)
+top20de <- head(sig_results[order(abs(sig_results$log2FoldChange)),],n = 20)
+
+
+rds <- rlog(dds)
+matriz <- assay(rds)
+index <- rownames(top20de)
+DE_genes <- matriz[index,]
+```
+
+```{r}
+col_anno <- as.data.frame(colData(dds)[,"Response",drop = F])
+pheatmap(DE_genes,scale = "row",show_rownames = T,
+         clustering_distance_rows = "correlation",
+         annotation_col = col_anno )
+```
+
+As we can see, all CR patients cluster together but PD and PR ones don't, which fits what we inferred from the Venn diagram: CR features a lot of exclusive genes which don't differentiate PR from PD. 
+
+## GSEA
+
+Now we will check for enriched gene sets in each one of the three comparisons. For that purpose we will use two collections of curated gene sets: the KEGG (Kyoto Encyclopedia of Genes and Genomes) database and the extra-cellular matrix related gene sets produced by [@naba-2012]. We will plot the top 5 gene sets/pathways enriched in each comparison.
+
+<b>CR vs PD</b>
+```{r}
+curated <- msigdbr(species = "Homo sapiens",category = "C2") %>%
+  filter(gs_subcat == "CP:KEGG" | gs_subcat == "CP")
+  
+curated_use <- curated %>%
+  distinct(gs_name,gene_symbol) %>%
+  as.data.frame()
+```
+
+```{r}
+vector_gsea <- as.data.frame(resCR_PD) %>%
+  drop_na(log2FoldChange) %>%
+  arrange(desc(log2FoldChange)) %>%
+  rownames_to_column("Symbol") %>%
+  pull(log2FoldChange,name = Symbol)
+```
+
+```{r}
+over_ct <- GSEA(vector_gsea,TERM2GENE = curated_use)
+over_ct <- pairwise_termsim(over_ct)
+```
+
+```{r}
+emapplot(over_ct,showCategory = 5,color = "NES")
+```
+
+As can be seen in the scale at the side, all top 5 pathways are up-regulated in the PD patients. Two of them are related to the extra-cellular matrix (the two NABA ones). Hedgehog signaling is key for basal cell carcinoma and to a great extent the enrichment of the KEGG Basal Cell Carcinoma gene set is due to the hedgehog signalling pathway being a subset thereof. (19 of the 25 genes responsible for the enrichment of the basal carcinoma gene set are present in the hedgehog signalling gene set). As the KEGG gene set includes genes related to the primary cilium both in presence and in absence of hedgehog signalling, the enrichment of this gene is insufficient to conclude greater hedgehog signalling activity. Nevertheless, a close examination of the genes that are contributing to the enrichment reveals that they contain several of the genes specifically related to HH signalling (the very HH, HHIP..), which leads us to conclude that there is indeed enrichment of HH signalling.
+
+```{r}
+table(unlist(str_split(over_ct["KEGG_BASAL_CELL_CARCINOMA",11],"/")) %in%
+        unlist(str_split(over_ct["KEGG_HEDGEHOG_SIGNALING_PATHWAY",11],"/")))
+```
+
+<b>PR vs PD</b>
+
+```{r}
+vector_gsea <- as.data.frame(resPR_PD) %>%
+  drop_na(log2FoldChange) %>%
+  arrange(desc(log2FoldChange)) %>%
+  rownames_to_column("Symbol") %>%
+  pull(log2FoldChange,name = Symbol)
+```
+
+```{r}
+over_ct1 <- GSEA(vector_gsea,TERM2GENE = curated_use) 
+over_ct1 <- pairwise_termsim(over_ct1)
+emapplot(over_ct1,showCategory = 5,color = "NES")
+```
+
+Three of the top 5 pathways (the three NABA ones) are clearly related to the ECM. The other two are too general to be informative. All 5 are up-regulated in the PD group.
+
+```{r}
+vector_gsea <- as.data.frame(resCR_PR) %>%
+  drop_na(log2FoldChange) %>%
+  arrange(desc(log2FoldChange)) %>%
+  rownames_to_column("Symbol") %>%
+  pull(log2FoldChange,name = Symbol)
+```
+
+<b>CR vs PR</b>
+
+```{r}
+over_ct2 <- GSEA(vector_gsea,TERM2GENE = curated_use)
+over_ct2 <- pairwise_termsim(over_ct2)
+emapplot(over_ct2,showCategory = 5,color = "NES")
+```
+
+All 5 pathways are up-regulated in the CR group. Two of them are related to the ECM. The complement and coagulation cascades are two different pathways comprised of different sets of genes, but are lumped into one gene set in the KEGG collection. In order to ensure that both are indeed enriched we coloured the enriched genes in the KEGG website, which resulted in extensive colouring of both genes in the complement and in the coagulation cascade. 
+
+Now let's check the degree of overlap between the gene sets enriched in the different comparisons.
+```{r}
+venn(list(over_ct[,1],over_ct1[,1],over_ct2[,1]),names = c("CR_PD","PR_PD","CR_PR"))
+```
+
+Judging from what we saw in the Venn diagrams of differentially expressed genes, the overlap between the gene sets enriched for B (PR vs PD) and C (CR vs PR) is due to some gene sets being enriched in the same direction for CR and PD respectively to PR. Let's check whether that's the case using the same procedure we used previously:
+```{r}
+over_ctup <- over_ct %>%
+  filter(NES < 0)
+over_ct1up <- over_ct1 %>%
+  filter(NES < 0)
+over_ct2up <- over_ct2 %>%
+  filter(NES < 0)
+```
+
+```{r}
+venn(list(over_ctup[,1],over_ct1up[,1],
+          over_ct2up[,1]),names = c("CR_PD","PR_PD","CR_PR"))
+title(main = "Down-enriched gene sets")
+```
+
+```{r}
+over_ctup <- over_ct %>%
+  filter(NES > 0)
+over_ct1up <- over_ct1 %>%
+  filter(NES > 0)
+over_ct2up <- over_ct2 %>%
+  filter(NES > 0)
+
+venn(list(over_ctup[,1],over_ct1up[,1],over_ct2up[,1]),
+     names = c("CR_PD","PR_PD","CR_PR"))
+title(main = "Up-enriched gene sets")
+```
+
+It is confirmed that the overlap between B and C is due to the above cause. Let's see which are the 10 gene sets enriched in the same direction for CR and PD respectively to PR.
+
+```{r}
+over_ct1[over_ct1[,1] %in% over_ct2[,1],c(1,5)]
+```
+Of these 10 gene sets, 8 are enriched in CR and PD with respect to PR and 2 are enriched in PR with respect to CR and PD. Of these 8, most have to do with the extra-cellular matrix.
+
+# Discussion
+
+A rigid ECM has been associated with poor response to immunotherapy, probably because of matrix stiffness constituting a physical barrier to T cell infiltration [@he-2021]. Our results show ECM-related gene sets to be enriched both in CR and PR with respect to CR patients. Interestingly, ECM-related genes are enriched in PR with respect to PD, suggesting a PR < CR < PD ordering for ECM density, contrasting with the CR < PR < PD ordering that would be expected were the difference between PR and CR to be a result of a higher degree of presence in CR of the factors present in PR. Thus, it seems that while a high ECM density is associated with no response, the relationship between ECM and response is not monotonic and too low ECM density can hamper complete responsiveness.
+
+Another gene set whose enrichment is ordered differently to the expected (given the aforementioned assumption) order CR < PR < PD is the PPAR signaling pathway, which presents a PR < CR = PD ordering. The PPAR-gamma signaling pathway is involved in adipogenesis, adipocytes having been linked [@wu-2020] to increased expression of PD-L1 (thus potentially decreasing the effectiveness of pembrolizumab). That ordering may be due to low PPAR signalling levels enabling a limited response while difficulty complete response. The fact that obesity has been linked [@wang-2018] to better response to checkpoint blockade in mice and humans shows that the relationship between adipose tissue and checkpoint blockade response is not straightforward.
+
+Other pathways follow more expected orderings: the hedgehog signalling pathway is enriched both in CR and in PR with respect to PD, but is not significantly enriched in CR with respect to PR (i.e., an CR = PR < PD ordering). It is possible that HH signalling reduces the effectiveness of pembrolizumab by increasing the expression of PD-L1, which it is known to do [@chakrabarti-2018].
+
+We have to take with caution any conclusion taken from this dataset: the absence of a control group receiving an alternative treatment means we can't fully distinguish between general markers of positive cancer prognosis and specific markers and factors that influence response to pembrolizumab checkpoint blockade.
+
+# Bibliography
+
